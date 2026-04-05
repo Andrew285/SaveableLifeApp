@@ -19,6 +19,9 @@ class CommandHandler(
                     val data = getListByCategoryUseCase(command.categoryName)
                     CommandResult.ItemsList(data)
                 }
+                is Command.Clear -> {
+                    CommandResult.ItemsCleared
+                }
             }
         } catch (e: Exception) {
             CommandResult.Error(e.message)

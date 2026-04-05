@@ -4,6 +4,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.koin.compose.koinInject
 import org.simpleapps.saveable.domain.SaveableItem
+import org.simpleapps.saveable.domain.autocomplete.Suggestion
 import org.simpleapps.saveable.ui.ItemCard
 import org.simpleapps.saveable.ui.MainStateHolder
 
@@ -29,6 +31,7 @@ import org.simpleapps.saveable.ui.MainStateHolder
 private val BgDark        = Color(0xFF0E0E10)
 val Surface1      = Color(0xFF1A1A1E)
 val Surface2      = Color(0xFF242428)
+private val SurfaceHover  = Color(0xFF2E2E34)
 val AccentGreen   = Color(0xFF00FF85)
 val AccentDim     = Color(0xFF00FF8520)
 val TextPrimary   = Color(0xFFF0F0F0)
@@ -41,22 +44,20 @@ fun MainScreen() {
     val textState   = rememberTextFieldState()
     val state       = stateHolder.uiState
 
-    // sync text field → state holder
     LaunchedEffect(Unit) {
         snapshotFlow { textState.text.toString() }
             .collect { stateHolder.onInputChanged(it) }
     }
 
-    // clear text field when state holder clears inputText
+    // sync insertText back into the text field when suggestion selected
     LaunchedEffect(state.inputText) {
-        if (state.inputText.isEmpty()) {
-            textState.edit { replace(0, length, "") }
+        val current = textState.text.toString()
+        if (state.inputText != current) {
+            textState.edit { replace(0, length, state.inputText) }
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose { stateHolder.onDispose() }
-    }
+    DisposableEffect(Unit) { onDispose { stateHolder.onDispose() } }
 
     Box(
         modifier = Modifier
@@ -66,52 +67,61 @@ fun MainScreen() {
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // ── Header ──────────────────────────────────────────────────────
             Header()
             Spacer(Modifier.height(32.dp))
 
-            // ── Input ───────────────────────────────────────────────────────
-            InputBar(
-                textState    = textState,
-                onSubmit     = stateHolder::onSubmit,
-                isLoading    = state.isLoading
-            )
-            Spacer(Modifier.height(12.dp))
+            // Input + autocomplete dropdown stacked together
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    InputBar(
+                        textState  = textState,
+                        isLoading  = state.isLoading,
+                        onSubmit   = stateHolder::onSubmit,
+                        onNavigate = stateHolder::onSuggestionNavigate
+                    )
 
-            // ── Command hint ─────────────────────────────────────────────
+                    // Dropdown appears directly below input
+                    AnimatedVisibility(
+                        visible = state.suggestions.isNotEmpty(),
+                        enter   = fadeIn() + slideInVertically { -it / 2 },
+                        exit    = fadeOut()
+                    ) {
+                        SuggestionsDropdown(
+                            suggestions      = state.suggestions,
+                            selectedIndex    = state.selectedSuggestion,
+                            onSelect         = stateHolder::onSuggestionSelected
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
             Text(
-                text  = "Type /add <category> <content>  ·  /list <category>  ·  /search <query>",
-                color = TextSecondary,
-                fontSize = 11.sp,
+                text       = "↑↓ navigate  ·  Tab / Enter select  ·  Enter submit",
+                color      = TextSecondary,
+                fontSize   = 11.sp,
                 fontFamily = FontFamily.Monospace
             )
             Spacer(Modifier.height(8.dp))
 
-            // ── Feedback messages ────────────────────────────────────────
             AnimatedVisibility(
                 visible = state.successMessage.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically(),
                 exit    = fadeOut()
             ) {
-                FeedbackBanner(
-                    message = state.successMessage,
-                    isError = false
-                )
+                FeedbackBanner(state.successMessage, isError = false)
             }
+
             AnimatedVisibility(
                 visible = state.isError && state.errorMessage.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically(),
                 exit    = fadeOut()
             ) {
-                FeedbackBanner(
-                    message = state.errorMessage,
-                    isError = true
-                )
+                FeedbackBanner(state.errorMessage, isError = true)
             }
 
             Spacer(Modifier.height(24.dp))
 
-            // ── Item list ────────────────────────────────────────────────
             AnimatedVisibility(
                 visible = state.items.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically()
@@ -122,41 +132,12 @@ fun MainScreen() {
     }
 }
 
-// ── Header ──────────────────────────────────────────────────────────────────
-@Composable
-private fun Header() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(AccentGreen)
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text       = "SAVEABLE",
-            color      = TextPrimary,
-            fontSize   = 13.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-            letterSpacing = 4.sp
-        )
-        Spacer(Modifier.width(16.dp))
-        Text(
-            text     = "personal vault",
-            color    = TextSecondary,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace
-        )
-    }
-}
-
-// ── Input bar ────────────────────────────────────────────────────────────────
 @Composable
 private fun InputBar(
-    textState : androidx.compose.foundation.text.input.TextFieldState,
-    onSubmit  : () -> Unit,
-    isLoading : Boolean
+    textState  : androidx.compose.foundation.text.input.TextFieldState,
+    isLoading  : Boolean,
+    onSubmit   : () -> Unit,
+    onNavigate : (Boolean) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -169,30 +150,25 @@ private fun InputBar(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)
         ) {
-            Text(
-                text       = ">",
-                color      = AccentGreen,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                fontSize   = 16.sp
-            )
+            Text(">", color = AccentGreen, fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.width(8.dp))
             OutlinedTextField(
-                state  = textState,
-                modifier = Modifier
+                state     = textState,
+                modifier  = Modifier
                     .weight(1f)
                     .onPreviewKeyEvent { keyEvent ->
-                        if (keyEvent.key  == Key.Enter &&
-                            keyEvent.type == KeyEventType.KeyDown
-                        ) {
-                            onSubmit()
-                            true
-                        } else false
+                        when {
+                            keyEvent.type != KeyEventType.KeyDown -> false
+                            keyEvent.key  == Key.Enter -> { onSubmit(); true }
+                            keyEvent.key  == Key.Tab   -> { onSubmit(); true }
+                            keyEvent.key  == Key.DirectionDown -> { onNavigate(true);  true }
+                            keyEvent.key  == Key.DirectionUp   -> { onNavigate(false); true }
+                            else -> false
+                        }
                     },
                 textStyle = LocalTextStyle.current.copy(
-                    color      = TextPrimary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize   = 14.sp
+                    color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 14.sp
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor   = Color.Transparent,
@@ -200,40 +176,90 @@ private fun InputBar(
                     cursorColor          = AccentGreen
                 ),
                 placeholder = {
-                    Text(
-                        "/add notes Buy milk  or  /list notes",
-                        color      = TextSecondary,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize   = 14.sp
-                    )
+                    Text("/add notes Buy milk", color = TextSecondary,
+                        fontFamily = FontFamily.Monospace, fontSize = 14.sp)
                 }
             )
             if (isLoading) {
                 CircularProgressIndicator(
-                    modifier  = Modifier.size(16.dp),
-                    color     = AccentGreen,
-                    strokeWidth = 2.dp
-                )
+                    modifier = Modifier.size(16.dp), color = AccentGreen, strokeWidth = 2.dp)
                 Spacer(Modifier.width(12.dp))
             } else {
-                Text(
-                    text     = "↵",
-                    color    = TextSecondary,
-                    fontSize = 16.sp
-                )
+                Text("↵", color = TextSecondary, fontSize = 16.sp)
                 Spacer(Modifier.width(4.dp))
             }
         }
     }
 }
 
-// ── Feedback banner ──────────────────────────────────────────────────────────
+@Composable
+private fun SuggestionsDropdown(
+    suggestions  : List<Suggestion>,
+    selectedIndex: Int,
+    onSelect     : (Suggestion) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+            .background(Surface1)
+            .border(1.dp, Surface2, RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+            .padding(vertical = 4.dp)
+    ) {
+        suggestions.forEachIndexed { index, suggestion ->
+            val isSelected = index == selectedIndex
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (isSelected) SurfaceHover else Color.Transparent)
+                    .clickable { onSelect(suggestion) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text       = if (isSelected) "▸" else " ",
+                    color      = AccentGreen,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize   = 12.sp,
+                    modifier   = Modifier.width(16.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text       = suggestion.displayText,
+                    color      = if (isSelected) TextPrimary else TextSecondary,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize   = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                    modifier   = Modifier.weight(1f)
+                )
+                Text(
+                    text       = suggestion.description,
+                    color      = TextSecondary.copy(alpha = 0.6f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize   = 11.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Header() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(AccentGreen))
+        Spacer(Modifier.width(10.dp))
+        Text("SAVEABLE", color = TextPrimary, fontSize = 13.sp,
+            fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, letterSpacing = 4.sp)
+        Spacer(Modifier.width(16.dp))
+        Text("personal vault", color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+    }
+}
+
 @Composable
 private fun FeedbackBanner(message: String, isError: Boolean) {
-    val bg     = if (isError) Color(0xFFFF4D6A15) else AccentDim
+    val bg     = if (isError) Color(0x26FF4D6A) else AccentDim
     val border = if (isError) ErrorColor else AccentGreen
     val text   = if (isError) ErrorColor else AccentGreen
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,61 +270,29 @@ private fun FeedbackBanner(message: String, isError: Boolean) {
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text       = if (isError) "✗" else "✓",
-            color      = text,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize   = 12.sp
-        )
+        Text(if (isError) "✗" else "✓", color = text,
+            fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         Spacer(Modifier.width(10.dp))
-        Text(
-            text       = message,
-            color      = text,
-            fontFamily = FontFamily.Monospace,
-            fontSize   = 12.sp
-        )
+        Text(message, color = text, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
     }
 }
 
-// ── Item list ─────────────────────────────────────────────────────────────────
 @Composable
 private fun ItemList(items: List<SaveableItem>) {
     Column {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 12.dp)
-        ) {
-            Text(
-                text       = "RESULTS",
-                color      = TextSecondary,
-                fontSize   = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 3.sp
-            )
+        Row(verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 12.dp)) {
+            Text("RESULTS", color = TextSecondary, fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace, letterSpacing = 3.sp)
             Spacer(Modifier.width(10.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(AccentDim)
-                    .padding(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text       = "${items.size}",
-                    color      = AccentGreen,
-                    fontSize   = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
+            Box(modifier = Modifier.clip(RoundedCornerShape(4.dp))
+                .background(AccentDim).padding(horizontal = 8.dp, vertical = 2.dp)) {
+                Text("${items.size}", color = AccentGreen, fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
             }
         }
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            items(items) { item ->
-                ItemCard(item)
-            }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(items) { ItemCard(it) }
         }
     }
 }

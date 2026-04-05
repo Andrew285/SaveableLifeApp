@@ -6,6 +6,7 @@ import org.simpleapps.saveable.domain.command.CommandHandler
 import org.simpleapps.saveable.domain.command.CommandParser
 import org.simpleapps.saveable.domain.repository.IMainRepository
 import org.simpleapps.saveable.domain.usecases.AddCommandUseCase
+import org.simpleapps.saveable.domain.usecases.GetCategoriesUseCase
 import org.simpleapps.saveable.domain.usecases.GetListByCategoryUseCase
 import org.simpleapps.saveable.ui.MainStateHolder
 
@@ -17,9 +18,10 @@ val appModule = module {
 
     factory { AddCommandUseCase(get()) }
     factory { GetListByCategoryUseCase(get()) }
+    factory { GetCategoriesUseCase(get()) }
 
     single { CommandParser() }
     factory { CommandHandler(get(), get()) }
 
-    factory { MainStateHolder(get(), get()) }
+    factory { MainStateHolder(get(), get(), get()) }
 }

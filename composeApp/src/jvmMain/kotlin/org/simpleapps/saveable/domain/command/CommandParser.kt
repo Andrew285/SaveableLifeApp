@@ -9,6 +9,7 @@ class CommandParser {
         return when (startComponent) {
             "/add" -> Command.Add(commandComponents[1], commandComponents[2])
             "/list" -> Command.List(commandComponents[1])
+            "/clear" -> Command.Clear
             else -> null
         }
     }
