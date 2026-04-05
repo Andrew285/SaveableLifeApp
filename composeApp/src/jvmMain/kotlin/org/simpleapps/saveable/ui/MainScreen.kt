@@ -126,7 +126,15 @@ fun MainScreen() {
                 visible = state.items.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically()
             ) {
-                ItemList(items = state.items)
+                ItemList(
+                    items = state.items,
+                    onEditItem = { item, newValue ->
+                        stateHolder.onEditItem(item, newValue)
+                    },
+                    onDeleteItem = { item ->
+                        stateHolder.onDeleteItem(item)
+                    }
+                )
             }
         }
     }
@@ -278,7 +286,11 @@ private fun FeedbackBanner(message: String, isError: Boolean) {
 }
 
 @Composable
-private fun ItemList(items: List<SaveableItem>) {
+private fun ItemList(
+    items: List<SaveableItem>,
+    onEditItem: (SaveableItem, String) -> Unit,
+    onDeleteItem: (SaveableItem) -> Unit,
+) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 12.dp)) {
@@ -292,7 +304,13 @@ private fun ItemList(items: List<SaveableItem>) {
             }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(items) { ItemCard(it) }
+            items(items) { item ->
+                ItemCard(
+                    item     = item,
+                    onEdit   = { it, newContent -> onEditItem(it, newContent) },
+                    onDelete = { onDeleteItem(it) }
+                )
+            }
         }
     }
 }

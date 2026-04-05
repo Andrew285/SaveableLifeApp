@@ -2,7 +2,7 @@ package org.simpleapps.saveable.domain.usecases
 
 import org.simpleapps.saveable.domain.repository.IMainRepository
 
-class AddCommandUseCase(
+class AddItemUseCase(
     private val repository: IMainRepository
 ) {
     suspend operator fun invoke(categoryName: String, content: String) {

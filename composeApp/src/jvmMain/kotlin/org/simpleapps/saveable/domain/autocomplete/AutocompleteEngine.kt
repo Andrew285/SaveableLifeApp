@@ -8,7 +8,7 @@ data class Suggestion(
 
 class AutocompleteEngine {
 
-    private val commands = listOf("/add", "/list", "/search", "/delete", "/pin", "/help", "/clear")
+    private val commands = listOf("/add", "/add_category", "/list", "/search", "/delete", "/pin", "/help", "/clear")
 
     fun suggest(input: String, categories: List<String>): List<Suggestion> {
         if (!input.startsWith("/")) return emptyList()
@@ -22,6 +22,10 @@ class AutocompleteEngine {
                 commands
                     .filter { it.startsWith(cmd) && it != cmd }
                     .map { Suggestion(it, "$it ", describeCommand(it)) }
+            }
+
+            parts.size == 2 && parts[0] == "/add_category" -> {
+                emptyList()
             }
 
             // typed full command + space + partial category

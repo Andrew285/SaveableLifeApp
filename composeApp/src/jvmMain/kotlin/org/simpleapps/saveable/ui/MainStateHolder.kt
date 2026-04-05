@@ -13,6 +13,7 @@ import org.simpleapps.saveable.domain.SaveableItem
 import org.simpleapps.saveable.domain.autocomplete.AutocompleteEngine
 import org.simpleapps.saveable.domain.autocomplete.Suggestion
 import org.simpleapps.saveable.domain.category.Category
+import org.simpleapps.saveable.domain.command.Command
 import org.simpleapps.saveable.domain.command.CommandHandler
 import org.simpleapps.saveable.domain.command.CommandParser
 import org.simpleapps.saveable.domain.command.CommandResult
@@ -57,8 +58,9 @@ class MainStateHolder(
             inputText         = text,
             suggestions       = suggestions,
             selectedSuggestion = -1,
-            successMessage    = "",
-            isError           = false
+            successMessage     = if (text.isNotEmpty()) "" else uiState.successMessage,
+            isError            = if (text.isNotEmpty()) false else uiState.isError,
+            errorMessage       = if (text.isNotEmpty()) "" else uiState.errorMessage
         )
     }
 
@@ -111,48 +113,95 @@ class MainStateHolder(
             }
 
             log.info("Executing command: $command")
+            val result = commandHandler.handle(command)
 
-            when (val result = commandHandler.handle(command)) {
-                is CommandResult.Success -> {
-                    log.info("Command succeeded: ${result.message}")
-                    uiState = uiState.copy(
-                        isError = false,
-                        isLoading = false,
-                        successMessage = result.message,
-                    )
-                }
-                is CommandResult.ItemsList -> {
-                    log.debug("Got ${result.data.size} items")
-                    uiState = uiState.copy(
-                        isError = false,
-                        isLoading = false,
-                        items = result.data
-                    )
-                }
-                is CommandResult.ItemsCleared -> {
-                    uiState = uiState.copy(
-                        isError = false,
-                        isLoading = false,
-                        items = emptyList()
-                    )
-                }
-                is CommandResult.Error -> {
-                    log.error("Command failed: ${result.errorMessage}")
-                    uiState = uiState.copy(
-                        isError = true,
-                        errorMessage = result.errorMessage.toString(),
-                        isLoading = false,
-                    )
-                }
-            }
-            clearInputText()
+            handleCommandResult(result)
         }
     }
 
-    fun clearInputText() {
-        uiState = uiState.copy(
-            inputText = ""
-        )
+    fun handleCommandResult(result: CommandResult) {
+        when (result) {
+            is CommandResult.Success -> {
+                log.info("Command succeeded: ${result.message}")
+                loadCategories()
+                uiState = uiState.copy(
+                    isError = false,
+                    isLoading = false,
+                    successMessage = result.message,
+                    inputText = ""
+                )
+            }
+            is CommandResult.ItemsList -> {
+                log.debug("Got ${result.data.size} items")
+                uiState = uiState.copy(
+                    isError = false,
+                    isLoading = false,
+                    items = result.data,
+                    inputText = ""
+                )
+            }
+            is CommandResult.ItemsCleared -> {
+                uiState = uiState.copy(
+                    isError = false,
+                    isLoading = false,
+                    items = emptyList(),
+                    inputText = ""
+                )
+            }
+            is CommandResult.Error -> {
+                log.error("Command failed: ${result.errorMessage}")
+                uiState = uiState.copy(
+                    isError = true,
+                    errorMessage = result.errorMessage.toString(),
+                    isLoading = false,
+                )
+            }
+        }
+    }
+
+    fun onEditItem(item: SaveableItem, newContent: String) {
+        scope.launch {
+            val result = commandHandler.handle(Command.EditItem(item.id, newContent))
+            when (result) {
+                is CommandResult.Success -> {
+                    // optimistically update the item in the list
+                    uiState = uiState.copy(
+                        items = uiState.items.map {
+                            if (it.id == item.id) it.copy(content = newContent) else it
+                        },
+                        successMessage = "Item is updated successfully"
+                    )
+                }
+                is CommandResult.Error -> {
+                    uiState = uiState.copy(
+                        isError      = true,
+                        errorMessage = "Failed to edit: ${result.errorMessage}"
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun onDeleteItem(item: SaveableItem) {
+        scope.launch {
+            val result = commandHandler.handle(Command.DeleteItem(item.id))
+            when (result) {
+                is CommandResult.Success -> {
+                    uiState = uiState.copy(
+                        items = uiState.items.filter { it.id != item.id },
+                        successMessage = "Item is deleted successfully"
+                    )
+                }
+                is CommandResult.Error -> {
+                    uiState = uiState.copy(
+                        isError      = true,
+                        errorMessage = "Failed to delete: ${result.errorMessage}"
+                    )
+                }
+                else -> Unit
+            }
+        }
     }
 
     fun onDispose() = scope.cancel()

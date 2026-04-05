@@ -5,7 +5,10 @@ import org.simpleapps.saveable.data.repository.MainRepositoryImpl
 import org.simpleapps.saveable.domain.command.CommandHandler
 import org.simpleapps.saveable.domain.command.CommandParser
 import org.simpleapps.saveable.domain.repository.IMainRepository
-import org.simpleapps.saveable.domain.usecases.AddCommandUseCase
+import org.simpleapps.saveable.domain.usecases.AddCategoryUseCase
+import org.simpleapps.saveable.domain.usecases.AddItemUseCase
+import org.simpleapps.saveable.domain.usecases.DeleteItemUseCase
+import org.simpleapps.saveable.domain.usecases.EditItemUseCase
 import org.simpleapps.saveable.domain.usecases.GetCategoriesUseCase
 import org.simpleapps.saveable.domain.usecases.GetListByCategoryUseCase
 import org.simpleapps.saveable.ui.MainStateHolder
@@ -16,12 +19,15 @@ val appModule = module {
 
     single<IMainRepository> { MainRepositoryImpl(get()) }
 
-    factory { AddCommandUseCase(get()) }
+    factory { AddItemUseCase(get()) }
+    factory { EditItemUseCase(get()) }
+    factory { DeleteItemUseCase(get()) }
+    factory { AddCategoryUseCase(get()) }
     factory { GetListByCategoryUseCase(get()) }
     factory { GetCategoriesUseCase(get()) }
 
     single { CommandParser() }
-    factory { CommandHandler(get(), get()) }
+    factory { CommandHandler(get(), get(), get(), get(), get()) }
 
     factory { MainStateHolder(get(), get(), get()) }
 }

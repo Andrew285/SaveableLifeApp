@@ -4,9 +4,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 import org.simpleapps.saveable.data.db.CategoryTable
 import org.simpleapps.saveable.data.db.ItemTable
 import org.simpleapps.saveable.data.db.toCategory
@@ -31,6 +34,30 @@ class MainRepositoryImpl(
             }
         }
         log.info("Item added successfully to $categoryName from repository")
+    }
+
+    override suspend fun editItem(id: Long, content: String) = withContext(Dispatchers.IO) {
+        transaction(db) {
+            ItemTable.update({
+                ItemTable.id eq id
+            }) {
+                it[ItemTable.content]   = content
+            }
+        }
+    }
+
+    override suspend fun deleteItem(id: Long) = withContext(Dispatchers.IO) {
+        transaction(db) {
+            ItemTable.deleteWhere { ItemTable.id eq id }
+        }
+    }
+
+    override suspend fun addCategory(categoryName: String) {
+        transaction(db) {
+            CategoryTable.insert {
+                it[CategoryTable.name] = categoryName
+            }
+        }
     }
 
     override suspend fun getItemsByCategory(categoryName: String): List<SaveableItem> = withContext(Dispatchers.IO) {
