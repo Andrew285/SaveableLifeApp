@@ -12,6 +12,10 @@ kotlin {
     
     sourceSets {
         commonMain.dependencies {
+            // Koin
+            implementation(libs.koin.core)
+            implementation(libs.koin.compose)
+
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)
@@ -27,6 +31,12 @@ kotlin {
         jvmMain.dependencies {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
+
+            implementation(libs.exposed.core)
+            implementation(libs.exposed.jdbc)
+            implementation(libs.exposed.dao)
+            implementation(libs.sqlite.jdbc)
+            implementation(libs.logback)
         }
     }
 }
