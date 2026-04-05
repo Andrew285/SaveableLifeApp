@@ -21,27 +21,30 @@ import org.simpleapps.saveable.util.logger
 
 class MainRepositoryImpl(
     private val db: Database
-): IMainRepository {
+) : IMainRepository {
     private val log = logger()
 
-    override suspend fun addItem(categoryName: String, content: String) = withContext(Dispatchers.IO) {
-        log.debug("Adding item to category=$categoryName in repository")
+    override suspend fun addItem(
+        categoryName: String,
+        content     : String,
+        imageBase64 : String?
+    ) = withContext(Dispatchers.IO) {
+        log.debug("Adding item to category=$categoryName, hasImage=${imageBase64 != null}")
         transaction(db) {
             ItemTable.insert {
                 it[ItemTable.categoryName] = categoryName
-                it[ItemTable.content] = content
-                it[ItemTable.createdAt] = System.currentTimeMillis()
+                it[ItemTable.content]      = content
+                it[ItemTable.createdAt]    = System.currentTimeMillis()
+                it[ItemTable.imageBase64]  = imageBase64
             }
         }
-        log.info("Item added successfully to $categoryName from repository")
+        log.info("Item added successfully to $categoryName")
     }
 
     override suspend fun editItem(id: Long, content: String) = withContext(Dispatchers.IO) {
         transaction(db) {
-            ItemTable.update({
-                ItemTable.id eq id
-            }) {
-                it[ItemTable.content]   = content
+            ItemTable.update({ ItemTable.id eq id }) {
+                it[ItemTable.content] = content
             }
         }
     }
@@ -60,24 +63,20 @@ class MainRepositoryImpl(
         }
     }
 
-    override suspend fun getItemsByCategory(categoryName: String): List<SaveableItem> = withContext(Dispatchers.IO) {
-        log.debug("Getting items by category in repository=$categoryName")
-        val result = transaction(db) {
-            ItemTable
-                .selectAll()
-                .where { ItemTable.categoryName eq categoryName }
-                .orderBy(ItemTable.createdAt to SortOrder.DESC)
-                .map { it.toSaveableItem() }
+    override suspend fun getItemsByCategory(categoryName: String): List<SaveableItem> =
+        withContext(Dispatchers.IO) {
+            log.debug("Getting items by category=$categoryName")
+            transaction(db) {
+                ItemTable
+                    .selectAll()
+                    .where { ItemTable.categoryName eq categoryName }
+                    .orderBy(ItemTable.createdAt to SortOrder.DESC)
+                    .map { it.toSaveableItem() }
+            }
         }
-        log.debug("Got items by category from repository=$categoryName")
-        return@withContext result
-    }
 
-    override suspend fun getAllCategories(): List<Category> {
-        return transaction(db) {
-            CategoryTable
-                .selectAll()
-                .map { it.toCategory() }
+    override suspend fun getAllCategories(): List<Category> =
+        transaction(db) {
+            CategoryTable.selectAll().map { it.toCategory() }
         }
-    }
 }

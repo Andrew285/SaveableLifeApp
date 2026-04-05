@@ -15,6 +15,7 @@ object ItemTable: Table("items") {
     val categoryName = varchar("category_name", 64)
         .references(CategoryTable.name)
     val createdAt = long("created_at")
+    val imageBase64  = text("image_base64").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

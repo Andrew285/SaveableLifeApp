@@ -7,18 +7,17 @@ import org.simpleapps.saveable.domain.usecases.EditItemUseCase
 import org.simpleapps.saveable.domain.usecases.GetListByCategoryUseCase
 
 class CommandHandler(
-    private val addItemUseCase: AddItemUseCase,
-    private val editItemUseCase: EditItemUseCase,
-    private val deleteItemUseCase: DeleteItemUseCase,
-    private val addCategoryUseCase: AddCategoryUseCase,
+    private val addItemUseCase         : AddItemUseCase,
+    private val editItemUseCase        : EditItemUseCase,
+    private val deleteItemUseCase      : DeleteItemUseCase,
+    private val addCategoryUseCase     : AddCategoryUseCase,
     private val getListByCategoryUseCase: GetListByCategoryUseCase,
 ) {
-
     suspend fun handle(command: Command): CommandResult {
         return try {
-            return when (command) {
+            when (command) {
                 is Command.AddItem -> {
-                    addItemUseCase(command.categoryName, command.content)
+                    addItemUseCase(command.categoryName, command.content, command.imageBase64)
                     CommandResult.Success("Item is added successfully")
                 }
                 is Command.EditItem -> {
@@ -37,9 +36,7 @@ class CommandHandler(
                     val data = getListByCategoryUseCase(command.categoryName)
                     CommandResult.ItemsList(data)
                 }
-                is Command.Clear -> {
-                    CommandResult.ItemsCleared
-                }
+                is Command.Clear -> CommandResult.ItemsCleared
             }
         } catch (e: Exception) {
             CommandResult.Error(e.message)

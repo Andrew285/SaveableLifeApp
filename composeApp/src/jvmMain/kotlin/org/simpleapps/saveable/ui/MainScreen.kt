@@ -37,6 +37,8 @@ val AccentDim     = Color(0xFF00FF8520)
 val TextPrimary   = Color(0xFFF0F0F0)
 val TextSecondary = Color(0xFF888890)
 private val ErrorColor    = Color(0xFFFF4D6A)
+private val AccentYellow  = Color(0xFFFFD166)
+private val AccentYellowDim = Color(0x26FFD166)
 
 @Composable
 fun MainScreen() {
@@ -64,32 +66,43 @@ fun MainScreen() {
             .fillMaxSize()
             .background(BgDark)
             .padding(horizontal = 48.dp, vertical = 40.dp)
+            // ── Global Ctrl+V / Cmd+V paste interceptor ────────────────────
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    keyEvent.key == Key.V &&
+                    (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)
+                ) {
+                    stateHolder.onPasteEvent() // returns true if an image was captured
+                    // return false so the text field still gets the event for text paste
+                    false
+                } else false
+            }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
             Header()
             Spacer(Modifier.height(32.dp))
 
-            // Input + autocomplete dropdown stacked together
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     InputBar(
-                        textState  = textState,
-                        isLoading  = state.isLoading,
-                        onSubmit   = stateHolder::onSubmit,
-                        onNavigate = stateHolder::onSuggestionNavigate
+                        textState         = textState,
+                        isLoading         = state.isLoading,
+                        pendingImageLabel = state.pendingImageLabel,
+                        onClearImage      = stateHolder::onClearPendingImage,
+                        onSubmit          = stateHolder::onSubmit,
+                        onNavigate        = stateHolder::onSuggestionNavigate
                     )
 
-                    // Dropdown appears directly below input
                     AnimatedVisibility(
                         visible = state.suggestions.isNotEmpty(),
                         enter   = fadeIn() + slideInVertically { -it / 2 },
                         exit    = fadeOut()
                     ) {
                         SuggestionsDropdown(
-                            suggestions      = state.suggestions,
-                            selectedIndex    = state.selectedSuggestion,
-                            onSelect         = stateHolder::onSuggestionSelected
+                            suggestions   = state.suggestions,
+                            selectedIndex = state.selectedSuggestion,
+                            onSelect      = stateHolder::onSuggestionSelected
                         )
                     }
                 }
@@ -97,7 +110,7 @@ fun MainScreen() {
 
             Spacer(Modifier.height(12.dp))
             Text(
-                text       = "↑↓ navigate  ·  Tab / Enter select  ·  Enter submit",
+                text       = "↑↓ navigate  ·  Tab / Enter select  ·  Enter submit  ·  Ctrl+V paste image",
                 color      = TextSecondary,
                 fontSize   = 11.sp,
                 fontFamily = FontFamily.Monospace
@@ -127,13 +140,9 @@ fun MainScreen() {
                 enter   = fadeIn() + slideInVertically()
             ) {
                 ItemList(
-                    items = state.items,
-                    onEditItem = { item, newValue ->
-                        stateHolder.onEditItem(item, newValue)
-                    },
-                    onDeleteItem = { item ->
-                        stateHolder.onDeleteItem(item)
-                    }
+                    items        = state.items,
+                    onEditItem   = { item, newValue -> stateHolder.onEditItem(item, newValue) },
+                    onDeleteItem = { item -> stateHolder.onDeleteItem(item) }
                 )
             }
         }
@@ -142,63 +151,102 @@ fun MainScreen() {
 
 @Composable
 private fun InputBar(
-    textState  : androidx.compose.foundation.text.input.TextFieldState,
-    isLoading  : Boolean,
-    onSubmit   : () -> Unit,
-    onNavigate : (Boolean) -> Unit
+    textState        : androidx.compose.foundation.text.input.TextFieldState,
+    isLoading        : Boolean,
+    pendingImageLabel: String,
+    onClearImage     : () -> Unit,
+    onSubmit         : () -> Unit,
+    onNavigate       : (Boolean) -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Surface1)
-            .border(1.dp, Surface2, RoundedCornerShape(10.dp))
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp)
+    Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(if (pendingImageLabel.isEmpty()) 10.dp else topCorners()))
+                .background(Surface1)
+                .border(1.dp, Surface2, RoundedCornerShape(10.dp))
         ) {
-            Text(">", color = AccentGreen, fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Spacer(Modifier.width(8.dp))
-            OutlinedTextField(
-                state     = textState,
-                modifier  = Modifier
-                    .weight(1f)
-                    .onPreviewKeyEvent { keyEvent ->
-                        when {
-                            keyEvent.type != KeyEventType.KeyDown -> false
-                            keyEvent.key  == Key.Enter -> { onSubmit(); true }
-                            keyEvent.key  == Key.Tab   -> { onSubmit(); true }
-                            keyEvent.key  == Key.DirectionDown -> { onNavigate(true);  true }
-                            keyEvent.key  == Key.DirectionUp   -> { onNavigate(false); true }
-                            else -> false
-                        }
-                    },
-                textStyle = LocalTextStyle.current.copy(
-                    color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 14.sp
-                ),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor   = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    cursorColor          = AccentGreen
-                ),
-                placeholder = {
-                    Text("/add notes Buy milk", color = TextSecondary,
-                        fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                Text(">", color = AccentGreen, fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.width(8.dp))
+                OutlinedTextField(
+                    state    = textState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .onPreviewKeyEvent { keyEvent ->
+                            when {
+                                keyEvent.type != KeyEventType.KeyDown -> false
+                                keyEvent.key  == Key.Enter            -> { onSubmit(); true }
+                                keyEvent.key  == Key.Tab              -> { onSubmit(); true }
+                                keyEvent.key  == Key.DirectionDown    -> { onNavigate(true);  true }
+                                keyEvent.key  == Key.DirectionUp      -> { onNavigate(false); true }
+                                else -> false
+                            }
+                        },
+                    textStyle = LocalTextStyle.current.copy(
+                        color = TextPrimary, fontFamily = FontFamily.Monospace, fontSize = 14.sp
+                    ),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor          = AccentGreen
+                    ),
+                    placeholder = {
+                        Text("/add notes \"multi word note\"", color = TextSecondary,
+                            fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+                    }
+                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp), color = AccentGreen, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                } else {
+                    Text("↵", color = TextSecondary, fontSize = 16.sp)
+                    Spacer(Modifier.width(4.dp))
                 }
-            )
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp), color = AccentGreen, strokeWidth = 2.dp)
-                Spacer(Modifier.width(12.dp))
-            } else {
-                Text("↵", color = TextSecondary, fontSize = 16.sp)
-                Spacer(Modifier.width(4.dp))
+            }
+        }
+
+        // Pending image badge – shown below input bar
+        AnimatedVisibility(
+            visible = pendingImageLabel.isNotEmpty(),
+            enter   = fadeIn(),
+            exit    = fadeOut()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+                    .background(AccentYellowDim)
+                    .border(
+                        1.dp,
+                        AccentYellow.copy(alpha = 0.3f),
+                        RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(pendingImageLabel, color = AccentYellow,
+                    fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                Text(
+                    text     = "✕ clear",
+                    color    = AccentYellow.copy(alpha = 0.7f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    modifier = Modifier.clickable { onClearImage() }
+                )
             }
         }
     }
 }
+
+// Helper so top corners are always 10.dp and bottom square when badge is visible
+private fun topCorners() = 10.dp
 
 @Composable
 private fun SuggestionsDropdown(
@@ -287,8 +335,8 @@ private fun FeedbackBanner(message: String, isError: Boolean) {
 
 @Composable
 private fun ItemList(
-    items: List<SaveableItem>,
-    onEditItem: (SaveableItem, String) -> Unit,
+    items       : List<SaveableItem>,
+    onEditItem  : (SaveableItem, String) -> Unit,
     onDeleteItem: (SaveableItem) -> Unit,
 ) {
     Column {

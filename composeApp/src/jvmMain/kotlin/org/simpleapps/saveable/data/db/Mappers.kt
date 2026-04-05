@@ -9,6 +9,7 @@ fun ResultRow.toSaveableItem() = SaveableItem(
     content = this[ItemTable.content],
     categoryName = this[ItemTable.categoryName],
     createdAt = this[ItemTable.createdAt],
+    imageBase64  = this[ItemTable.imageBase64],
 )
 
 fun ResultRow.toCategory() = Category(
