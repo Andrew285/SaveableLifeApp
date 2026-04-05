@@ -5,20 +5,18 @@ class CommandParser {
     /**
      * Tokenises [text] respecting double-quoted groups.
      * "/add notes "hello world"" → ["/add", "notes", "hello world"]
+     * "/translate "give up""     → ["/translate", "give up"]
      */
     private fun tokenize(text: String): List<String> {
-        val tokens = mutableListOf<String>()
+        val tokens  = mutableListOf<String>()
         val current = StringBuilder()
         var inQuotes = false
 
         for (ch in text) {
             when {
-                ch == '"' -> inQuotes = !inQuotes          // toggle quote mode, don't include the char
-                ch == ' ' && !inQuotes -> {                // space outside quotes = delimiter
-                    if (current.isNotEmpty()) {
-                        tokens += current.toString()
-                        current.clear()
-                    }
+                ch == '"'              -> inQuotes = !inQuotes
+                ch == ' ' && !inQuotes -> {
+                    if (current.isNotEmpty()) { tokens += current.toString(); current.clear() }
                 }
                 else -> current.append(ch)
             }
@@ -27,19 +25,23 @@ class CommandParser {
         return tokens
     }
 
-    fun parse(text: String): Command? {
+    /**
+     * [allowImageOnlyAdd] — when true, "/add <category>" with no content text is valid.
+     * Used when an image is already pending in state.
+     */
+    fun parse(text: String, allowImageOnlyAdd: Boolean = false): Command? {
         val parts = tokenize(text.trim())
         if (parts.isEmpty()) return null
 
         return when (parts[0]) {
             "/add" -> {
-                // /add <category> <content…>
-                // content may be a single quoted token or everything after category
-                if (parts.size < 3) return null
-                val category = parts[1]
-                // join remaining tokens so un-quoted multi-word content also works
-                val content = parts.drop(2).joinToString(" ")
-                Command.AddItem(category, content)
+                // Need at least category; content is optional when an image will be attached
+                if (parts.size < 2) return null
+                if (parts.size < 3 && !allowImageOnlyAdd) return null
+                Command.AddItem(
+                    categoryName = parts[1],
+                    content      = parts.drop(2).joinToString(" ")  // "" when no content tokens
+                )
             }
             "/add_category" -> {
                 if (parts.size < 2) return null
@@ -49,8 +51,12 @@ class CommandParser {
                 if (parts.size < 2) return null
                 Command.List(parts[1])
             }
+            "/translate" -> {
+                if (parts.size < 2) return null
+                Command.Translate(parts.drop(1).joinToString(" "))
+            }
             "/clear" -> Command.Clear
-            else -> null
+            else    -> null
         }
     }
 }

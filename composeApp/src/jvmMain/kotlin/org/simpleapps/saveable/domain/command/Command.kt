@@ -12,4 +12,5 @@ sealed class Command {
     data class AddCategory(val categoryName: String) : Command()
     data class List(val categoryName: String) : Command()
     data object Clear : Command()
+    data class Translate(val text: String): Command()
 }

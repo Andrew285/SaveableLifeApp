@@ -15,6 +15,7 @@ import org.simpleapps.saveable.domain.command.Command
 import org.simpleapps.saveable.domain.command.CommandHandler
 import org.simpleapps.saveable.domain.command.CommandParser
 import org.simpleapps.saveable.domain.command.CommandResult
+import org.simpleapps.saveable.domain.translation.TranslationResult
 import org.simpleapps.saveable.domain.usecases.GetCategoriesUseCase
 import org.simpleapps.saveable.util.logger
 import java.awt.Toolkit
@@ -25,25 +26,24 @@ import java.util.Base64
 import javax.imageio.ImageIO
 
 data class MainUiState(
-    val inputText         : String          = "",
-    val categories        : List<String>    = emptyList(),
-    val items             : List<SaveableItem> = emptyList(),
-    val isError           : Boolean         = false,
-    val errorMessage      : String          = "",
-    val successMessage    : String          = "",
-    val isLoading         : Boolean         = false,
-    val suggestions       : List<Suggestion> = emptyList(),
-    val selectedSuggestion: Int             = -1,
-    /** Non-null while user has pasted an image and hasn't submitted yet */
-    val pendingImageBase64: String?         = null,
-    /** Preview label shown in the input bar */
-    val pendingImageLabel : String          = ""
+    val inputText          : String             = "",
+    val categories         : List<String>       = emptyList(),
+    val items              : List<SaveableItem> = emptyList(),
+    val isError            : Boolean            = false,
+    val errorMessage       : String             = "",
+    val successMessage     : String             = "",
+    val isLoading          : Boolean            = false,
+    val suggestions        : List<Suggestion>   = emptyList(),
+    val selectedSuggestion : Int                = -1,
+    val pendingImageBase64 : String?            = null,
+    val pendingImageLabel  : String             = "",
+    val pendingTranslation : TranslationResult? = null
 )
 
 class MainStateHolder(
-    private val commandParser          : CommandParser,
-    private val commandHandler         : CommandHandler,
-    private val getCategoriesUseCase   : GetCategoriesUseCase
+    private val commandParser        : CommandParser,
+    private val commandHandler       : CommandHandler,
+    private val getCategoriesUseCase : GetCategoriesUseCase
 ) {
     var uiState by mutableStateOf(MainUiState()); private set
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -92,26 +92,20 @@ class MainStateHolder(
         )
     }
 
-    /**
-     * Called from the UI when a paste event fires.
-     * Checks the system clipboard for an image; if found stores it as a pending Base64 blob
-     * so the next /add submit will attach it to the item.
-     *
-     * @return true if an image was captured from the clipboard.
-     */
+    fun onDismissTranslation() {
+        uiState = uiState.copy(pendingTranslation = null)
+    }
+
     fun onPasteEvent(): Boolean {
         return try {
-            val clipboard   = Toolkit.getDefaultToolkit().systemClipboard
+            val clipboard    = Toolkit.getDefaultToolkit().systemClipboard
             val transferable = clipboard.getContents(null) ?: return false
             if (!transferable.isDataFlavorSupported(DataFlavor.imageFlavor)) return false
-
             val image = transferable.getTransferData(DataFlavor.imageFlavor) as? BufferedImage
                 ?: return false
-
-            val baos = ByteArrayOutputStream()
+            val baos   = ByteArrayOutputStream()
             ImageIO.write(image, "PNG", baos)
             val base64 = Base64.getEncoder().encodeToString(baos.toByteArray())
-
             uiState = uiState.copy(
                 pendingImageBase64 = base64,
                 pendingImageLabel  = "📎 image ready to attach"
@@ -137,26 +131,37 @@ class MainStateHolder(
         scope.launch {
             uiState = uiState.copy(isLoading = true)
 
+            val rawInput     = uiState.inputText.trim()
             val pendingImage = uiState.pendingImageBase64
+            val translation  = uiState.pendingTranslation
 
-            // If there is a pending image but the user typed a bare category (no /add prefix),
-            // auto-wrap it: treat the whole input as the category, content = ""
-            val rawInput = uiState.inputText.trim()
+            val command: Command? = when {
 
-            val command: Command? = if (pendingImage != null) {
-                // Try normal parse first; if null, build AddItem directly from input
-                val parsed = commandParser.parse(rawInput)
-                when {
-                    parsed is Command.AddItem -> parsed.copy(imageBase64 = pendingImage)
-                    parsed == null && rawInput.isNotEmpty() ->
-                        // "/add <category>" or just "<category>" – accept both
-                        if (rawInput.startsWith("/add ") && rawInput.split(" ").size == 2) {
-                            Command.AddItem(rawInput.split(" ")[1], "", pendingImage)
-                        } else null
-                    else -> parsed
+                // ── Case 1: translation card open + /add <category> ─────────────────
+                translation != null && rawInput.startsWith("/add ") -> {
+                    // parse with allowImageOnlyAdd=true so "/add notes" (no content) is valid
+                    val parsed = commandParser.parse(rawInput, allowImageOnlyAdd = true)
+                    if (parsed is Command.AddItem) {
+                        val content = buildTranslationContent(translation)
+                        uiState = uiState.copy(pendingTranslation = null)
+                        parsed.copy(content = content)
+                    } else null
                 }
-            } else {
-                commandParser.parse(rawInput)
+
+                // ── Case 2: image pending ────────────────────────────────────────────
+                // Pass allowImageOnlyAdd=true so "/add notes" succeeds even without text content
+                pendingImage != null -> {
+                    val parsed = commandParser.parse(rawInput, allowImageOnlyAdd = true)
+                    if (parsed is Command.AddItem) {
+                        parsed.copy(imageBase64 = pendingImage)
+                    } else {
+                        // Not an /add command — execute normally without the image
+                        parsed
+                    }
+                }
+
+                // ── Case 3: normal command ───────────────────────────────────────────
+                else -> commandParser.parse(rawInput)
             }
 
             if (command == null) {
@@ -168,12 +173,29 @@ class MainStateHolder(
                 return@launch
             }
 
-            val result = commandHandler.handle(command)
-            // Clear pending image after any submit attempt
             uiState = uiState.copy(pendingImageBase64 = null, pendingImageLabel = "")
+            val result = commandHandler.handle(command)
             handleCommandResult(result)
         }
     }
+
+    private fun buildTranslationContent(t: TranslationResult): String = buildString {
+        append("${t.sourceText} [${t.destinationText}]")
+        if (!t.phonetic.isNullOrBlank()) append(" /${t.phonetic}/")
+        appendLine()
+        if (t.possibleTranslations.isNotEmpty()) {
+            appendLine("Translations: ${t.possibleTranslations.joinToString(", ")}")
+        }
+        t.definitions.take(3).forEach { def ->
+            appendLine()
+            append("[${def.partOfSpeech}] ${def.definition}")
+            if (!def.example.isNullOrBlank()) appendLine("\ne.g. ${def.example}")
+            else appendLine()
+            if (def.synonyms.isNotEmpty()) {
+                appendLine("synonyms: ${def.synonyms.take(6).joinToString(", ")}")
+            }
+        }
+    }.trimEnd()
 
     fun handleCommandResult(result: CommandResult) {
         when (result) {
@@ -194,12 +216,21 @@ class MainStateHolder(
                     inputText = ""
                 )
             }
+            is CommandResult.TranslationData -> {
+                uiState = uiState.copy(
+                    isError            = false,
+                    isLoading          = false,
+                    pendingTranslation = result.result,
+                    inputText          = ""
+                )
+            }
             is CommandResult.ItemsCleared -> {
                 uiState = uiState.copy(
-                    isError   = false,
-                    isLoading = false,
-                    items     = emptyList(),
-                    inputText = ""
+                    isError            = false,
+                    isLoading          = false,
+                    items              = emptyList(),
+                    pendingTranslation = null,
+                    inputText          = ""
                 )
             }
             is CommandResult.Error -> {
@@ -220,7 +251,7 @@ class MainStateHolder(
                     items          = uiState.items.map { if (it.id == item.id) it.copy(content = newContent) else it },
                     successMessage = "Item is updated successfully"
                 )
-                is CommandResult.Error -> uiState = uiState.copy(
+                is CommandResult.Error   -> uiState = uiState.copy(
                     isError      = true,
                     errorMessage = "Failed to edit: ${result.errorMessage}"
                 )
@@ -237,7 +268,7 @@ class MainStateHolder(
                     items          = uiState.items.filter { it.id != item.id },
                     successMessage = "Item is deleted successfully"
                 )
-                is CommandResult.Error -> uiState = uiState.copy(
+                is CommandResult.Error   -> uiState = uiState.copy(
                     isError      = true,
                     errorMessage = "Failed to delete: ${result.errorMessage}"
                 )

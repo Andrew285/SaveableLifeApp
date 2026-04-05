@@ -26,18 +26,19 @@ import org.simpleapps.saveable.domain.SaveableItem
 import org.simpleapps.saveable.domain.autocomplete.Suggestion
 import org.simpleapps.saveable.ui.ItemCard
 import org.simpleapps.saveable.ui.MainStateHolder
+import org.simpleapps.saveable.ui.TranslationCard
 
 // ── Palette ────────────────────────────────────────────────────────────────
-private val BgDark        = Color(0xFF0E0E10)
-val Surface1      = Color(0xFF1A1A1E)
-val Surface2      = Color(0xFF242428)
-private val SurfaceHover  = Color(0xFF2E2E34)
-val AccentGreen   = Color(0xFF00FF85)
-val AccentDim     = Color(0xFF00FF8520)
-val TextPrimary   = Color(0xFFF0F0F0)
-val TextSecondary = Color(0xFF888890)
-private val ErrorColor    = Color(0xFFFF4D6A)
-private val AccentYellow  = Color(0xFFFFD166)
+private val BgDark          = Color(0xFF0E0E10)
+val Surface1        = Color(0xFF1A1A1E)
+val Surface2        = Color(0xFF242428)
+private val SurfaceHover    = Color(0xFF2E2E34)
+val AccentGreen     = Color(0xFF00FF85)
+val AccentDim       = Color(0xFF00FF8520)
+val TextPrimary     = Color(0xFFF0F0F0)
+val TextSecondary   = Color(0xFF888890)
+private val ErrorColor      = Color(0xFFFF4D6A)
+private val AccentYellow    = Color(0xFFFFD166)
 private val AccentYellowDim = Color(0x26FFD166)
 
 @Composable
@@ -51,7 +52,6 @@ fun MainScreen() {
             .collect { stateHolder.onInputChanged(it) }
     }
 
-    // sync insertText back into the text field when suggestion selected
     LaunchedEffect(state.inputText) {
         val current = textState.text.toString()
         if (state.inputText != current) {
@@ -66,14 +66,12 @@ fun MainScreen() {
             .fillMaxSize()
             .background(BgDark)
             .padding(horizontal = 48.dp, vertical = 40.dp)
-            // ── Global Ctrl+V / Cmd+V paste interceptor ────────────────────
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown &&
                     keyEvent.key == Key.V &&
                     (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)
                 ) {
-                    stateHolder.onPasteEvent() // returns true if an image was captured
-                    // return false so the text field still gets the event for text paste
+                    stateHolder.onPasteEvent()
                     false
                 } else false
             }
@@ -83,6 +81,7 @@ fun MainScreen() {
             Header()
             Spacer(Modifier.height(32.dp))
 
+            // ── Input + dropdown ──────────────────────────────────────────
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     InputBar(
@@ -110,44 +109,64 @@ fun MainScreen() {
 
             Spacer(Modifier.height(12.dp))
             Text(
-                text       = "↑↓ navigate  ·  Tab / Enter select  ·  Enter submit  ·  Ctrl+V paste image",
+                text = buildString {
+                    append("↑↓ navigate  ·  Tab / Enter select  ·  Enter submit  ·  Ctrl+V paste image")
+                    if (state.pendingTranslation != null) append("  ·  /add <list> to save word")
+                },
                 color      = TextSecondary,
                 fontSize   = 11.sp,
                 fontFamily = FontFamily.Monospace
             )
             Spacer(Modifier.height(8.dp))
 
+            // ── Feedback banners ──────────────────────────────────────────
             AnimatedVisibility(
                 visible = state.successMessage.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically(),
                 exit    = fadeOut()
-            ) {
-                FeedbackBanner(state.successMessage, isError = false)
-            }
+            ) { FeedbackBanner(state.successMessage, isError = false) }
 
             AnimatedVisibility(
                 visible = state.isError && state.errorMessage.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically(),
                 exit    = fadeOut()
+            ) { FeedbackBanner(state.errorMessage, isError = true) }
+
+            // ── Translation card ──────────────────────────────────────────
+            AnimatedVisibility(
+                visible = state.pendingTranslation != null,
+                enter   = fadeIn() + slideInVertically { it / 3 },
+                exit    = fadeOut()
             ) {
-                FeedbackBanner(state.errorMessage, isError = true)
+                state.pendingTranslation?.let { translation ->
+                    Column {
+                        Spacer(Modifier.height(16.dp))
+                        TranslationCard(
+                            result    = translation,
+                            onDismiss = stateHolder::onDismissTranslation
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(24.dp))
 
+            // ── Item list ─────────────────────────────────────────────────
             AnimatedVisibility(
                 visible = state.items.isNotEmpty(),
                 enter   = fadeIn() + slideInVertically()
             ) {
                 ItemList(
                     items        = state.items,
-                    onEditItem   = { item, newValue -> stateHolder.onEditItem(item, newValue) },
-                    onDeleteItem = { item -> stateHolder.onDeleteItem(item) }
+                    onEditItem   = { item, v -> stateHolder.onEditItem(item, v) },
+                    onDeleteItem = { stateHolder.onDeleteItem(it) }
                 )
             }
         }
     }
 }
+
+// ── InputBar ───────────────────────────────────────────────────────────────
 
 @Composable
 private fun InputBar(
@@ -162,7 +181,7 @@ private fun InputBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(if (pendingImageLabel.isEmpty()) 10.dp else topCorners()))
+                .clip(RoundedCornerShape(10.dp))
                 .background(Surface1)
                 .border(1.dp, Surface2, RoundedCornerShape(10.dp))
         ) {
@@ -196,8 +215,13 @@ private fun InputBar(
                         cursorColor          = AccentGreen
                     ),
                     placeholder = {
-                        Text("/add notes \"multi word note\"", color = TextSecondary,
-                            fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+                        Text(
+//                            "/translate throttle  or  /add notes \"multi word\"",
+                            "Type for example /add notes \"multi word\"",
+                            color      = TextSecondary,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize   = 14.sp
+                        )
                     }
                 )
                 if (isLoading) {
@@ -211,42 +235,30 @@ private fun InputBar(
             }
         }
 
-        // Pending image badge – shown below input bar
-        AnimatedVisibility(
-            visible = pendingImageLabel.isNotEmpty(),
-            enter   = fadeIn(),
-            exit    = fadeOut()
-        ) {
+        // Image pending badge
+        AnimatedVisibility(visible = pendingImageLabel.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
                     .background(AccentYellowDim)
-                    .border(
-                        1.dp,
-                        AccentYellow.copy(alpha = 0.3f),
-                        RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp)
-                    )
+                    .border(1.dp, AccentYellow.copy(alpha = 0.3f),
+                        RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(pendingImageLabel, color = AccentYellow,
                     fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                Text(
-                    text     = "✕ clear",
-                    color    = AccentYellow.copy(alpha = 0.7f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    modifier = Modifier.clickable { onClearImage() }
-                )
+                Text("✕ clear", color = AccentYellow.copy(alpha = 0.7f),
+                    fontFamily = FontFamily.Monospace, fontSize = 10.sp,
+                    modifier = Modifier.clickable { onClearImage() })
             }
         }
     }
 }
 
-// Helper so top corners are always 10.dp and bottom square when badge is visible
-private fun topCorners() = 10.dp
+// ── Suggestions dropdown ───────────────────────────────────────────────────
 
 @Composable
 private fun SuggestionsDropdown(
@@ -272,32 +284,25 @@ private fun SuggestionsDropdown(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text       = if (isSelected) "▸" else " ",
-                    color      = AccentGreen,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize   = 12.sp,
-                    modifier   = Modifier.width(16.dp)
-                )
+                Text(if (isSelected) "▸" else " ", color = AccentGreen,
+                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                    modifier = Modifier.width(16.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text       = suggestion.displayText,
                     color      = if (isSelected) TextPrimary else TextSecondary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize   = 13.sp,
+                    fontFamily = FontFamily.Monospace, fontSize = 13.sp,
                     fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                     modifier   = Modifier.weight(1f)
                 )
-                Text(
-                    text       = suggestion.description,
-                    color      = TextSecondary.copy(alpha = 0.6f),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize   = 11.sp
-                )
+                Text(suggestion.description, color = TextSecondary.copy(alpha = 0.6f),
+                    fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }
     }
 }
+
+// ── Header ─────────────────────────────────────────────────────────────────
 
 @Composable
 private fun Header() {
@@ -310,6 +315,8 @@ private fun Header() {
         Text("personal vault", color = TextSecondary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
     }
 }
+
+// ── Feedback banner ────────────────────────────────────────────────────────
 
 @Composable
 private fun FeedbackBanner(message: String, isError: Boolean) {
@@ -333,11 +340,13 @@ private fun FeedbackBanner(message: String, isError: Boolean) {
     }
 }
 
+// ── Item list ──────────────────────────────────────────────────────────────
+
 @Composable
 private fun ItemList(
     items       : List<SaveableItem>,
     onEditItem  : (SaveableItem, String) -> Unit,
-    onDeleteItem: (SaveableItem) -> Unit,
+    onDeleteItem: (SaveableItem) -> Unit
 ) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically,
@@ -355,7 +364,7 @@ private fun ItemList(
             items(items) { item ->
                 ItemCard(
                     item     = item,
-                    onEdit   = { it, newContent -> onEditItem(it, newContent) },
+                    onEdit   = { it, v -> onEditItem(it, v) },
                     onDelete = { onDeleteItem(it) }
                 )
             }

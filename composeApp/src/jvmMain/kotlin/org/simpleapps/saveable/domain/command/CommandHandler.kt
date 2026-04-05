@@ -5,13 +5,15 @@ import org.simpleapps.saveable.domain.usecases.AddItemUseCase
 import org.simpleapps.saveable.domain.usecases.DeleteItemUseCase
 import org.simpleapps.saveable.domain.usecases.EditItemUseCase
 import org.simpleapps.saveable.domain.usecases.GetListByCategoryUseCase
+import org.simpleapps.saveable.domain.usecases.TranslateUseCase
 
 class CommandHandler(
-    private val addItemUseCase         : AddItemUseCase,
-    private val editItemUseCase        : EditItemUseCase,
-    private val deleteItemUseCase      : DeleteItemUseCase,
-    private val addCategoryUseCase     : AddCategoryUseCase,
+    private val addItemUseCase          : AddItemUseCase,
+    private val editItemUseCase         : EditItemUseCase,
+    private val deleteItemUseCase       : DeleteItemUseCase,
+    private val addCategoryUseCase      : AddCategoryUseCase,
     private val getListByCategoryUseCase: GetListByCategoryUseCase,
+    private val translateUseCase        : TranslateUseCase,
 ) {
     suspend fun handle(command: Command): CommandResult {
         return try {
@@ -33,8 +35,11 @@ class CommandHandler(
                     CommandResult.Success("Category is added successfully")
                 }
                 is Command.List -> {
-                    val data = getListByCategoryUseCase(command.categoryName)
-                    CommandResult.ItemsList(data)
+                    CommandResult.ItemsList(getListByCategoryUseCase(command.categoryName))
+                }
+                is Command.Translate -> {
+                    val result = translateUseCase(command.text)
+                    CommandResult.TranslationData(result)
                 }
                 is Command.Clear -> CommandResult.ItemsCleared
             }

@@ -37,6 +37,8 @@ kotlin {
             implementation(libs.exposed.dao)
             implementation(libs.sqlite.jdbc)
             implementation(libs.logback)
+
+            implementation("org.json:json:20240303")
         }
     }
 }
