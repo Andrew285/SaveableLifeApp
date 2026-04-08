@@ -9,12 +9,10 @@ import java.io.File
 object DatabaseFactory {
 
     fun create(): Database {
-        val dbPath = "${System.getProperty("user.home")}/.saveable/saveable.db"
-
-        File(dbPath).parentFile.mkdirs()
+        val databasePath = getDatabasePath()
 
         val db = Database.connect(
-            url    = "jdbc:sqlite:$dbPath",
+            url    = "jdbc:sqlite:$databasePath",
             driver = "org.sqlite.JDBC"
         )
 
@@ -28,6 +26,14 @@ object DatabaseFactory {
         }
 
         return db
+    }
+
+    private fun getDatabasePath(): String {
+        val appDataPath = System.getenv("APPDATA") ?: System.getProperty("user.home")
+        val appDir = File(appDataPath, "SaveableApp")
+        appDir.mkdirs()
+
+        return appDir.resolve("saveable.db").absolutePath
     }
 
     private fun seedBuiltInCategories() {

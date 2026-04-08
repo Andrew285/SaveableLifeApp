@@ -49,9 +49,17 @@ compose.desktop {
         mainClass = "org.simpleapps.saveable.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "org.simpleapps.saveable"
+            targetFormats(TargetFormat.Dmg, TargetFormat.Exe, TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "SaveableApp"
             packageVersion = "1.0.0"
+
+            modules(
+                "java.sql",           // потрібен для JDBC/SQLite
+                "java.naming",        // потрібен для Exposed
+                "java.management",    // логування
+                "java.instrument",    // logback
+                "java.security.jgss"  // може знадобитись
+            )
         }
     }
 }
